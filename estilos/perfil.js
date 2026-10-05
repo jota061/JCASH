@@ -1,0 +1,188 @@
+import { StyleSheet } from "react-native";
+import { cores } from "./cores";
+export const perfil = StyleSheet.create({
+    // TELA PRINCIPAL
+    containerTela: {
+        flex: 1,
+        backgroundColor: cores.fundo,
+    },
+    conteudoRolavel: {
+        paddingTop: 20,
+        paddingHorizontal: 20, // Adicionado para dar respiro lateral no celular
+        alignItems: "center",
+    },
+    containerFoto: {
+        alignItems: "center",
+        paddingTop: 35,
+        marginBottom: 20,
+    },
+    wrapperIcone: {
+        position: "relative",
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    badgeCamera: {
+        position: "absolute",
+        bottom: 6,
+        right: 6,
+        backgroundColor: cores.destaque,
+        borderRadius: 12,
+        padding: 6,
+        borderWidth: 2,
+        borderColor: cores.fundo,
+    },
+    formulario: {
+        width: "100%",
+        backgroundColor: cores.fundoCard,
+        borderRadius: 16,
+        padding: 20, // Reduzido de 24 para 20 para os inputs ganharem largura útil
+        gap: 16,
+    },
+    tituloSecao: {
+        color: cores.textoBranco,
+        fontSize: 18,
+        fontWeight: "700",
+        marginBottom: 8,
+    },
+    cardInfo: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: cores.fundo,
+        borderColor: cores.bordaInput,
+        borderWidth: 1.5,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        gap: 12,
+    },
+    textosInfo: {
+        flex: 1,
+    },
+    rotuloInfo: {
+        color: cores.textoCinzaMedio,
+        fontSize: 12,
+        fontWeight: "500",
+    },
+    valorInfo: {
+        color: cores.textoBranco,
+        fontSize: 15,
+        fontWeight: "600",
+        marginTop: 2,
+    },
+    btnAcao: {
+        padding: 4,
+    },
+    botaoEditar: {
+        width: "100%",
+        height: 52,
+        borderRadius: 12,
+        borderWidth: 1.5,
+        borderColor: cores.destaque,
+        flexDirection: "row",
+        justifyContent: "center",
+        alignItems: "center",
+        gap: 8,
+        marginTop: 12,
+        backgroundColor: "transparent",
+    },
+    textoBotaoEditar: {
+        color: cores.destaque,
+        fontSize: 15,
+        fontWeight: "700",
+    },
+    botaoExcluir: {
+        width: "100%",
+        height: 52,
+        borderRadius: 12,
+        borderWidth: 1.5,
+        borderColor: cores.erro,
+        flexDirection: "row",
+        justifyContent: "center",
+        alignItems: "center",
+        gap: 8,
+        marginTop: 12,
+        backgroundColor: "transparent",
+    },
+    textoBotaoExcluir: {
+        color: cores.erro,
+        fontSize: 15,
+        fontWeight: "700",
+    },
+    observacaoSenha: {
+        color: cores.textoCinzaMedio,
+        fontSize: 11,
+        marginTop: 3,
+    },
+    fundoModal: {
+        flex: 1,
+        backgroundColor: "rgba(0,0,0,0.55)",
+        justifyContent: "center",
+        paddingHorizontal: 20,
+    },
+    containerModal: {
+        backgroundColor: cores.fundoCard,
+        borderRadius: 18,
+        padding: 20,
+        borderWidth: 1,
+        borderColor: cores.bordaInput,
+    },
+    tituloModal: {
+        color: cores.textoBranco,
+        fontSize: 19,
+        fontWeight: "700",
+    },
+    subtituloModal: {
+        color: cores.textoCinzaMedio,
+        fontSize: 13,
+        marginTop: 5,
+        marginBottom: 16,
+    },
+    inputModal: {
+        height: 52,
+        borderWidth: 1.5,
+        borderColor: cores.bordaInput,
+        borderRadius: 12,
+        backgroundColor: cores.fundo,
+        color: cores.textoBranco,
+        paddingHorizontal: 15,
+        fontSize: 15,
+    },
+    inputModalErro: {
+        borderColor: cores.erro,
+    },
+    erroModal: {
+        color: cores.erro,
+        fontSize: 12,
+        marginTop: 6,
+    },
+    acoesModal: {
+        flexDirection: "row",
+        gap: 10,
+        marginTop: 18,
+    },
+    botaoCancelarModal: {
+        flex: 1,
+        height: 48,
+        borderRadius: 10,
+        justifyContent: "center",
+        alignItems: "center",
+        borderWidth: 1.5,
+        borderColor: cores.bordaInput,
+    },
+    textoCancelarModal: {
+        color: cores.textoCinzaClaro,
+        fontWeight: "600",
+    },
+    botaoSalvarModal: {
+        flex: 1,
+        height: 48,
+        borderRadius: 10,
+        justifyContent: "center",
+        alignItems: "center",
+        backgroundColor: cores.destaque,
+    },
+    textoSalvarModal: {
+        color: cores.textoBotao,
+        fontWeight: "700",
+    },
+})
