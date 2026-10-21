@@ -128,10 +128,6 @@ export default function TrocarSenha() {
                 <TouchableOpacity style={formulario.botao} activeOpacity={0.8} onPress={handleAlterarSenha}>
                     <Text style={formulario.textoBotao}>ALTERAR SENHA</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity style={formulario.linkDireita} onPress={() => router.back()}>
-                    <Text style={formulario.textoLink}>Voltar</Text>
-                </TouchableOpacity>
             </View>
         </View>
     );

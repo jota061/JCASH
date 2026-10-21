@@ -13,5 +13,5 @@
     "**/*.tsx",
     ".expo/types/**/*.ts",
     "expo-env.d.ts"
-, "estilos/reservaEmergencia.js"  ]
+, "estilos/reservaEmergencia.js", "configuracoes/configuracaoApi.d.ts"  ]
 }
