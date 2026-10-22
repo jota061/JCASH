@@ -12,7 +12,9 @@ const roteador = express.Router();
 const TIPOS_PERMITIDOS = [
     "ENTRADA",
     "DESPESA",
-    "CONTA"
+    "CONTA",
+    "META",
+    "RESERVA"
 ];
 
 // Consultar as categorias do tipo solicitado

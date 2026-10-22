@@ -1,275 +1,591 @@
-import React, { useState } from "react";
-import { Stack } from "expo-router";
-import { ScrollView, Text, TouchableOpacity, View, TextInput, Alert, Modal } from "react-native";
-import { Ionicons, Feather } from "@expo/vector-icons";
-import DateTimePicker, { DateTimePickerEvent } from "@react-native-community/datetimepicker";
+import React, { useCallback, useRef, useState } from "react";
+import { Stack, useFocusEffect } from "expo-router";
+import {
+    ActivityIndicator,
+    Alert,
+    Modal,
+    ScrollView,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View
+} from "react-native";
+import { Feather, Ionicons } from "@expo/vector-icons";
+import DateTimePicker, {
+    DateTimePickerEvent
+} from "@react-native-community/datetimepicker";
+
 import { cores } from "../estilos/cores";
 import { metas } from "../estilos/metas";
-import { adicionarDias, dataEhAnteriorAHoje, formatarDataBR, formatarDataISO } from "../utils/datas";
+import {
+    adicionarDias,
+    dataEhAnteriorAHoje,
+    formatarDataBR,
+    formatarDataISO,
+    inicioDoDia
+} from "../utils/datas";
 import { formatarMoedaBR } from "../utils/moeda";
-
-interface Meta {
-    id: string;
-    nome: string;
-    valorAlvo: number;
-    valorAtual: number;
-    dataLimite: string;
-    categoria: string;
-}
+import {
+    arquivarMeta,
+    cadastrarMeta,
+    listarCategoriasMetas,
+    listarMetas,
+    registrarAporteMeta
+} from "../servicos/servicoMetas";
+import type {
+    CategoriaMeta,
+    MetaFinanceira
+} from "../servicos/servicoMetas";
 
 interface ErrosMetas {
     nome?: string;
-    valorAlvo?: string;
+    valor?: string;
     data?: string;
+    categoria?: string;
 }
 
-interface Categoria {
-    id: string;
-    nome: string;
-    icone: keyof typeof Ionicons.glyphMap;
+const ICONES_CATEGORIAS: Record<
+    string,
+    keyof typeof Ionicons.glyphMap
+> = {
+    Viagem: "airplane-outline",
+    Investimento: "trending-up-outline",
+    Investimentos: "trending-up-outline",
+    "Eletrônicos": "laptop-outline",
+    "Veículos": "car-outline",
+    Casa: "home-outline",
+    Outros: "grid-outline"
+};
+
+// O estado monetario guarda valores decimais, e o input mostra virgula.
+function interpretarValorDigitado(texto: string): string {
+    const digitos = texto.replace(/\D/g, "").slice(0, 12);
+    return digitos ? (Number(digitos) / 100).toFixed(2) : "";
 }
 
-const CATEGORIAS: Categoria[] = [
-    { id: "Viagem", nome: "Viagem", icone: "airplane-outline" },
-    { id: "Investimento", nome: "Investimento", icone: "trending-up-outline" },
-    { id: "Eletrônicos", nome: "Eletrônicos", icone: "laptop-outline" },
-    { id: "Veículos", nome: "Veículos", icone: "car-outline" },
-    { id: "Casa", nome: "Casa", icone: "home-outline" },
-    { id: "Outros", nome: "Outros", icone: "grid-outline" },
-];
-
-const METAS_MOCK: Meta[] = [
-    { id: "1", nome: "Viagem de Fim de Ano", valorAlvo: 3000, valorAtual: 1200, dataLimite: formatarDataISO(adicionarDias(new Date(), 45)), categoria: "Viagem" },
-    { id: "2", nome: "Trocar de Notebook", valorAlvo: 5000, valorAtual: 500, dataLimite: formatarDataISO(adicionarDias(new Date(), 80)), categoria: "Eletrônicos" },
-    { id: "3", nome: "Carro", valorAlvo: 15000, valorAtual: 3500, dataLimite: formatarDataISO(adicionarDias(new Date(), 180)), categoria: "Veículos" },
-];
+function valorEhValido(texto: string): boolean {
+    const valor = Number(texto);
+    return (
+        texto !== "" &&
+        Number.isFinite(valor) &&
+        valor > 0 &&
+        valor <= 9999999999.99 &&
+        /^\d{1,10}(\.\d{1,2})?$/.test(String(valor))
+    );
+}
 
 export default function Metas() {
-    const [listaMetas, setListaMetas] = useState<Meta[]>(METAS_MOCK);
+    const [lista, setLista] = useState<MetaFinanceira[]>([]);
+    const [categorias, setCategorias] = useState<CategoriaMeta[]>([]);
+    const [carregando, setCarregando] = useState(true);
+    const [processando, setProcessando] = useState(false);
+    const [erroConsulta, setErroConsulta] = useState("");
+    const consultaAtual = useRef(0);
+    const operacaoEmAndamento = useRef(false);
+
     const [nome, setNome] = useState("");
     const [valorAlvo, setValorAlvo] = useState("");
-    const [categoria, setCategoria] = useState("Viagem");
-    const [erros, setErros] = useState<ErrosMetas>({});
-    const [dataLimiteObj, setDataLimiteObj] = useState<Date>(adicionarDias(new Date(), 1));
+    const [categoriaId, setCategoriaId] = useState<number | null>(null);
+    const [dataLimite, setDataLimite] = useState(
+        () => adicionarDias(new Date(), 1)
+    );
     const [mostrarCalendario, setMostrarCalendario] = useState(false);
+    const [erros, setErros] = useState<ErrosMetas>({});
 
-    const [metaParaAdicionar, setMetaParaAdicionar] = useState<Meta | null>(null);
-    const [valorAdicionar, setValorAdicionar] = useState("");
-    const [erroAdicionar, setErroAdicionar] = useState(false);
+    const [metaAporte, setMetaAporte] = useState<MetaFinanceira | null>(null);
+    const [valorAporte, setValorAporte] = useState("");
+    const [erroAporte, setErroAporte] = useState(false);
 
-    const onChangeData = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    // Atualizar metas sempre que a tela receber foco.
+    const atualizarTela = useCallback(async () => {
+        const consulta = ++consultaAtual.current;
+        setCarregando(true);
+        setErroConsulta("");
+
+        try {
+            const [novasCategorias, novasMetas] = await Promise.all([
+                listarCategoriasMetas(),
+                listarMetas()
+            ]);
+
+            if (consulta !== consultaAtual.current) return;
+
+            setCategorias(novasCategorias);
+            setLista(novasMetas);
+            setCategoriaId((atual) =>
+                novasCategorias.some((item) => item.id_categoria === atual)
+                    ? atual
+                    : novasCategorias[0]?.id_categoria ?? null
+            );
+        } catch (erro) {
+            if (consulta === consultaAtual.current) {
+                // Evitar mostrar dados antigos ao trocar de usuario.
+                setLista([]);
+                setCategorias([]);
+                setCategoriaId(null);
+                setErroConsulta(
+                    erro instanceof Error
+                        ? erro.message
+                        : "Não foi possível consultar suas metas."
+                );
+            }
+        } finally {
+            if (consulta === consultaAtual.current) {
+                setCarregando(false);
+            }
+        }
+    }, []);
+
+    useFocusEffect(
+        useCallback(() => {
+            void atualizarTela();
+            return () => {
+                consultaAtual.current += 1;
+            };
+        }, [atualizarTela])
+    );
+
+    const onChangeData = (
+        evento: DateTimePickerEvent,
+        selecionada?: Date
+    ) => {
         setMostrarCalendario(false);
-        if (selectedDate) {
-            setDataLimiteObj(selectedDate);
-            setErros((prev) => ({ ...prev, data: undefined }));
+        if (evento.type === "set" && selecionada) {
+            setDataLimite(selecionada);
+            setErros((atual) => ({ ...atual, data: undefined }));
         }
     };
 
-    const handleValorChange = (text: string) => {
-        const limpo = text.replace(/\D/g, "");
-        if (!limpo) {
-            setValorAlvo("");
-            return;
-        }
-        setValorAlvo((Number(limpo) / 100).toFixed(2));
-        setErros((prev) => ({ ...prev, valorAlvo: undefined }));
-    };
-
-    const handleValorAdicionarChange = (text: string) => {
-        const limpo = text.replace(/\D/g, "");
-        if (!limpo) {
-            setValorAdicionar("");
-            setErroAdicionar(false);
-            return;
-        }
-        setValorAdicionar((Number(limpo) / 100).toFixed(2));
-        setErroAdicionar(false);
-    };
-
-    const resetFormulario = () => {
+    const limparFormulario = () => {
         setNome("");
         setValorAlvo("");
-        setCategoria("Viagem");
-        setDataLimiteObj(adicionarDias(new Date(), 1));
+        setDataLimite(adicionarDias(new Date(), 1));
         setErros({});
     };
 
+    // Bloquear toques duplicados em operacoes que gravam no MariaDB.
+    const executarAcao = async (
+        acao: () => Promise<void>,
+        mensagem: string
+    ) => {
+        if (operacaoEmAndamento.current) return;
+
+        operacaoEmAndamento.current = true;
+        setProcessando(true);
+
+        try {
+            await acao();
+            await atualizarTela();
+            Alert.alert("Sucesso!", mensagem);
+        } catch (erro) {
+            // Uma resposta perdida nao significa que a gravacao falhou.
+            await atualizarTela();
+            Alert.alert(
+                "Não foi possível concluir",
+                erro instanceof Error
+                    ? erro.message
+                    : "Consulte suas metas antes de tentar novamente."
+            );
+        } finally {
+            operacaoEmAndamento.current = false;
+            setProcessando(false);
+        }
+    };
+
     const validarEGravar = () => {
-        const errosAtuais: ErrosMetas = {};
-        if (!nome.trim()) errosAtuais.nome = "Informe o nome da meta";
-        if (!valorAlvo || Number(valorAlvo) <= 0) errosAtuais.valorAlvo = "Informe um valor maior que zero";
-        if (dataEhAnteriorAHoje(dataLimiteObj)) errosAtuais.data = "A data limite não pode estar no passado";
+        if (carregando || processando || erroConsulta) return;
 
-        if (Object.keys(errosAtuais).length > 0) {
-            setErros(errosAtuais);
+        const novosErros: ErrosMetas = {};
+
+        if (!nome.trim() || nome.trim().length > 100) {
+            novosErros.nome = "Informe um nome com até 100 caracteres.";
+        }
+        if (!valorEhValido(valorAlvo)) {
+            novosErros.valor = "Informe um valor positivo válido.";
+        }
+        if (dataEhAnteriorAHoje(dataLimite)) {
+            novosErros.data = "O prazo não pode estar no passado.";
+        }
+        if (categoriaId === null) {
+            novosErros.categoria = "Selecione uma categoria.";
+        }
+
+        setErros(novosErros);
+        if (Object.keys(novosErros).length > 0 || categoriaId === null) {
             return;
         }
 
-        const novaMeta: Meta = {
-            id: `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-            nome: nome.trim(),
-            valorAlvo: Number(valorAlvo),
-            valorAtual: 0,
-            dataLimite: formatarDataISO(dataLimiteObj),
-            categoria,
-        };
-
-        setListaMetas((prev) => [novaMeta, ...prev]);
-        Alert.alert("Sucesso!", `A meta "${novaMeta.nome}" foi cadastrada com sucesso.`, [{ text: "OK", onPress: resetFormulario }]);
+        void executarAcao(async () => {
+            await cadastrarMeta({
+                nome: nome.trim(),
+                valor_meta: Number(valorAlvo),
+                data_limite: formatarDataISO(dataLimite),
+                id_categoria: categoriaId
+            });
+            limparFormulario();
+        }, "Meta cadastrada no JCASH.");
     };
 
-    const abrirModalAdicionar = (meta: Meta) => {
-        setMetaParaAdicionar(meta);
-        setValorAdicionar("");
-        setErroAdicionar(false);
+    const abrirModalAporte = (meta: MetaFinanceira) => {
+        if (processando) return;
+        setMetaAporte(meta);
+        setValorAporte("");
+        setErroAporte(false);
     };
 
-    const confirmarAdicao = () => {
-        if (!metaParaAdicionar) return;
-        const valor = Number(valorAdicionar);
-        const restante = metaParaAdicionar.valorAlvo - metaParaAdicionar.valorAtual;
+    const confirmarAporte = () => {
+        if (!metaAporte || processando) return;
 
-        if (!valor || valor <= 0) {
-            setErroAdicionar(true);
-            Alert.alert("Valor inválido", "Informe um valor maior que zero.");
-            return;
-        }
-        if (valor > restante) {
-            setErroAdicionar(true);
-            Alert.alert("Valor acima do necessário", `Você ainda precisa de ${formatarMoedaBR(restante)} para atingir essa meta.`);
+        if (!valorEhValido(valorAporte)) {
+            setErroAporte(true);
+            Alert.alert("Valor inválido", "Informe um aporte maior que zero.");
             return;
         }
 
-        setListaMetas((prev) => prev.map((meta) => meta.id === metaParaAdicionar.id ? { ...meta, valorAtual: meta.valorAtual + valor } : meta));
-        setMetaParaAdicionar(null);
-        setValorAdicionar("");
+        const idMeta = metaAporte.id_meta;
+        const valor = Number(valorAporte);
+
+        void executarAcao(async () => {
+            // Aportes acima do objetivo sao permitidos pela regra do JCASH.
+            await registrarAporteMeta(idMeta, valor);
+            setMetaAporte(null);
+            setValorAporte("");
+        }, "Aporte registrado no MariaDB.");
     };
 
-    const excluirMeta = (meta: Meta) => {
-        Alert.alert("Excluir meta", `Deseja excluir a meta "${meta.nome}"?`, [
-            { text: "Cancelar", style: "cancel" },
-            { text: "Excluir", style: "destructive", onPress: () => setListaMetas((prev) => prev.filter((item) => item.id !== meta.id)) },
-        ]);
+    const confirmarArquivamento = (meta: MetaFinanceira) => {
+        if (processando) return;
+
+        Alert.alert(
+            "Arquivar meta",
+            `Deseja arquivar a meta "${meta.nome}"? Os aportes permanecerão guardados no banco.`,
+            [
+                { text: "Cancelar", style: "cancel" },
+                {
+                    text: "Arquivar",
+                    style: "destructive",
+                    onPress: () => {
+                        void executarAcao(async () => {
+                            await arquivarMeta(meta.id_meta);
+                        }, "Meta arquivada com sucesso.");
+                    }
+                }
+            ]
+        );
     };
+
+    const nomeCategoria = (idCategoria: number) =>
+        categorias.find((item) => item.id_categoria === idCategoria)
+            ?.nome ?? "Categoria";
 
     return (
-        <ScrollView style={metas.containerTela} contentContainerStyle={metas.scrollContainer} showsVerticalScrollIndicator={false}>
+        <ScrollView
+            style={metas.containerTela}
+            contentContainerStyle={metas.scrollContainer}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+        >
             <Stack.Screen options={{ headerShown: false }} />
+
             <View style={metas.conteudoCentral}>
                 <View style={metas.topo}>
-                    <Text style={metas.titulo}>Metas <Text style={metas.logo}>Financeiras</Text></Text>
+                    <Text style={metas.titulo}>
+                        Metas <Text style={metas.logo}>Financeiras</Text>
+                    </Text>
                 </View>
 
-                <View style={metas.formulario}>
-                    <Text style={metas.tituloFormulario}>Cadastrar Nova Meta</Text>
+                {carregando && (
+                    <ActivityIndicator size="large" color={cores.destaque} />
+                )}
 
+                {erroConsulta !== "" && (
+                    <View style={metas.formulario}>
+                        <Text style={metas.erroTexto}>{erroConsulta}</Text>
+                        <TouchableOpacity onPress={() => void atualizarTela()}>
+                            <Text style={{ color: cores.destaque }}>
+                                Tentar novamente
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                )}
+
+                <View style={metas.formulario}>
+                    <Text style={metas.tituloFormulario}>
+                        Cadastrar Nova Meta
+                    </Text>
+
+                    {/* NOME */}
                     <View style={metas.conteinerInput}>
                         <Text style={metas.label}>Nome da Meta</Text>
-                        <View style={[metas.envolucroInput, Boolean(erros.nome) && metas.inputErro]}>
-                            <Feather name="edit-2" size={20} color={cores.textoCinzaClaro} style={metas.iconeInput} />
+                        <View style={[
+                            metas.envolucroInput,
+                            Boolean(erros.nome) && metas.inputErro
+                        ]}>
+                            <Feather
+                                name="edit-2"
+                                size={20}
+                                color={cores.textoCinzaClaro}
+                                style={metas.iconeInput}
+                            />
                             <TextInput
                                 style={metas.inputComIcone}
                                 placeholder="Ex: Viagem para a Praia"
                                 placeholderTextColor={cores.textoPlaceholder}
                                 value={nome}
+                                maxLength={100}
+                                editable={!processando}
                                 onChangeText={(texto) => {
                                     setNome(texto);
-                                    setErros((prev) => ({ ...prev, nome: undefined }));
+                                    setErros((atual) => ({
+                                        ...atual,
+                                        nome: undefined
+                                    }));
                                 }}
                             />
                         </View>
-                        {erros.nome && <Text style={metas.erroTexto}>{erros.nome}</Text>}
+                        {erros.nome && (
+                            <Text style={metas.erroTexto}>{erros.nome}</Text>
+                        )}
                     </View>
 
+                    {/* VALOR OBJETIVO */}
                     <View style={metas.conteinerInput}>
                         <Text style={metas.label}>Valor da Meta</Text>
-                        <View style={[metas.envolucroInput, Boolean(erros.valorAlvo) && metas.inputErro]}>
+                        <View style={[
+                            metas.envolucroInput,
+                            Boolean(erros.valor) && metas.inputErro
+                        ]}>
                             <Text style={metas.prefixoCifrao}>R$</Text>
                             <TextInput
                                 style={metas.inputComIcone}
                                 placeholder="0,00"
                                 placeholderTextColor={cores.textoPlaceholder}
                                 keyboardType="numeric"
-                                value={valorAlvo ? valorAlvo.replace(".", ",") : ""}
-                                onChangeText={handleValorChange}
+                                value={valorAlvo.replace(".", ",")}
+                                editable={!processando}
+                                maxLength={13}
+                                onChangeText={(texto) => {
+                                    setValorAlvo(interpretarValorDigitado(texto));
+                                    setErros((atual) => ({
+                                        ...atual,
+                                        valor: undefined
+                                    }));
+                                }}
                             />
                         </View>
-                        {erros.valorAlvo && <Text style={metas.erroTexto}>{erros.valorAlvo}</Text>}
+                        {erros.valor && (
+                            <Text style={metas.erroTexto}>{erros.valor}</Text>
+                        )}
                     </View>
 
+                    {/* PRAZO */}
                     <View style={metas.conteinerInput}>
                         <Text style={metas.label}>Até quando é essa meta?</Text>
-                        <TouchableOpacity style={[metas.inputData, Boolean(erros.data) && metas.inputErro]} onPress={() => setMostrarCalendario(true)} activeOpacity={0.8}>
-                            <Text style={{ color: cores.textoCinzaClaro, fontSize: 16 }}>{dataLimiteObj.toLocaleDateString("pt-BR")}</Text>
-                            <Ionicons name="calendar-outline" size={20} color={cores.textoCinzaMedio} />
+                        <TouchableOpacity
+                            style={[
+                                metas.inputData,
+                                Boolean(erros.data) && metas.inputErro
+                            ]}
+                            onPress={() => setMostrarCalendario(true)}
+                            disabled={processando}
+                        >
+                            <Text style={{
+                                color: cores.textoCinzaClaro,
+                                fontSize: 16
+                            }}>
+                                {dataLimite.toLocaleDateString("pt-BR")}
+                            </Text>
+                            <Ionicons
+                                name="calendar-outline"
+                                size={20}
+                                color={cores.textoCinzaMedio}
+                            />
                         </TouchableOpacity>
-                        {erros.data && <Text style={metas.erroTexto}>{erros.data}</Text>}
+                        {erros.data && (
+                            <Text style={metas.erroTexto}>{erros.data}</Text>
+                        )}
                     </View>
 
                     {mostrarCalendario && (
                         <DateTimePicker
-                            value={dataLimiteObj}
+                            value={dataLimite}
                             mode="date"
                             display="default"
-                            minimumDate={new Date()}
+                            minimumDate={inicioDoDia()}
                             onChange={onChangeData}
                         />
                     )}
 
+                    {/* CATEGORIAS REAIS */}
                     <View>
                         <Text style={metas.label}>Categoria</Text>
-                        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={metas.gridCategorias}>
-                            {CATEGORIAS.map((cat) => {
-                                const selecionado = categoria === cat.id;
+                        <ScrollView
+                            horizontal
+                            showsHorizontalScrollIndicator={false}
+                            contentContainerStyle={metas.gridCategorias}
+                        >
+                            {categorias.map((item) => {
+                                const selecionada =
+                                    categoriaId === item.id_categoria;
+                                const icone =
+                                    ICONES_CATEGORIAS[item.nome] || "grid-outline";
+
                                 return (
-                                    <TouchableOpacity key={cat.id} activeOpacity={0.7} style={[metas.cardCategoria, selecionado && metas.cardCategoriaSelecionado]} onPress={() => setCategoria(cat.id)}>
-                                        <Ionicons name={cat.icone} size={18} color={selecionado ? cores.textoBotao : cores.textoCinzaClaro} />
-                                        <Text style={[metas.textoCategoria, selecionado && metas.textoCategoriaSelecionado]}>{cat.nome}</Text>
+                                    <TouchableOpacity
+                                        key={item.id_categoria}
+                                        activeOpacity={0.7}
+                                        disabled={processando}
+                                        style={[
+                                            metas.cardCategoria,
+                                            selecionada && metas.cardCategoriaSelecionado
+                                        ]}
+                                        onPress={() => {
+                                            setCategoriaId(item.id_categoria);
+                                            setErros((atual) => ({
+                                                ...atual,
+                                                categoria: undefined
+                                            }));
+                                        }}
+                                    >
+                                        <Ionicons
+                                            name={icone}
+                                            size={18}
+                                            color={selecionada
+                                                ? cores.textoBotao
+                                                : cores.textoCinzaClaro}
+                                        />
+                                        <Text style={[
+                                            metas.textoCategoria,
+                                            selecionada &&
+                                            metas.textoCategoriaSelecionado
+                                        ]}>
+                                            {item.nome}
+                                        </Text>
                                     </TouchableOpacity>
                                 );
                             })}
                         </ScrollView>
+                        {erros.categoria && (
+                            <Text style={metas.erroTexto}>{erros.categoria}</Text>
+                        )}
                     </View>
 
-                    <TouchableOpacity style={metas.botao} activeOpacity={0.8} onPress={validarEGravar}>
-                        <Text style={metas.textoBotao}>CADASTRAR META</Text>
+                    <TouchableOpacity
+                        style={[
+                            metas.botao,
+                            processando && { opacity: 0.7 }
+                        ]}
+                        disabled={
+                            processando ||
+                            carregando ||
+                            erroConsulta !== "" ||
+                            categorias.length === 0
+                        }
+                        onPress={validarEGravar}
+                    >
+                        {processando ? (
+                            <ActivityIndicator color={cores.textoBotao} />
+                        ) : (
+                            <Text style={metas.textoBotao}>
+                                CADASTRAR META
+                            </Text>
+                        )}
                     </TouchableOpacity>
                 </View>
 
+                {/* METAS CADASTRADAS */}
                 <View style={metas.secaoLista}>
-                    <Text style={metas.tituloSecao}>Suas Metas Atuais ({listaMetas.length})</Text>
-                    {listaMetas.map((item) => {
-                        const progresso = Math.min(100, (item.valorAtual / item.valorAlvo) * 100);
-                        const concluida = item.valorAtual >= item.valorAlvo;
+                    <Text style={metas.tituloSecao}>
+                        Suas Metas Atuais ({lista.length})
+                    </Text>
+
+                    {!carregando && !erroConsulta && lista.length === 0 && (
+                        <Text style={{
+                            color: cores.textoCinzaClaro,
+                            marginBottom: 16
+                        }}>
+                            Nenhuma meta cadastrada.
+                        </Text>
+                    )}
+
+                    {lista.map((meta) => {
+                        const concluida = meta.percentual >= 100;
+                        const percentualBarra = Math.max(
+                            0,
+                            Math.min(100, meta.percentual_visual)
+                        );
+
                         return (
-                            <View key={item.id} style={metas.cardMetaItem}>
+                            <View key={meta.id_meta} style={metas.cardMetaItem}>
                                 <View style={metas.topoCardMeta}>
                                     <View style={metas.infoMetaItem}>
-                                        <Ionicons name="flag-outline" size={22} color={concluida ? cores.destaque : cores.textoCinzaClaro} />
+                                        <Ionicons
+                                            name="flag-outline"
+                                            size={22}
+                                            color={concluida
+                                                ? cores.destaque
+                                                : cores.textoCinzaClaro}
+                                        />
                                         <View style={metas.textosMeta}>
-                                            <Text style={metas.nomeMetaItem} numberOfLines={1}>{item.nome}</Text>
-                                            <Text style={metas.detalheMetaItem}>Prazo: {formatarDataBR(item.dataLimite)} • {item.categoria}</Text>
+                                            <Text
+                                                style={metas.nomeMetaItem}
+                                                numberOfLines={2}
+                                            >
+                                                {meta.nome}
+                                            </Text>
+                                            <Text style={metas.detalheMetaItem}>
+                                                Prazo: {formatarDataBR(meta.data_limite)}
+                                                {" • "}{nomeCategoria(meta.id_categoria)}
+                                            </Text>
                                         </View>
                                     </View>
-                                    <TouchableOpacity onPress={() => excluirMeta(item)} style={metas.btnAcao}>
-                                        <Ionicons name="trash-outline" size={18} color={cores.erro} />
+                                    <TouchableOpacity
+                                        style={metas.btnAcao}
+                                        disabled={processando}
+                                        onPress={() => confirmarArquivamento(meta)}
+                                        accessibilityLabel="Arquivar meta"
+                                    >
+                                        <Ionicons
+                                            name="trash-outline"
+                                            size={18}
+                                            color={cores.erro}
+                                        />
                                     </TouchableOpacity>
                                 </View>
 
                                 <View style={metas.resumoValores}>
-                                    <Text style={metas.valorAtual}>Atual: {formatarMoedaBR(item.valorAtual)}</Text>
-                                    <Text style={metas.valorMetaItem}>Meta: {formatarMoedaBR(item.valorAlvo)}</Text>
+                                    <Text style={metas.valorAtual}>
+                                        Atual: {formatarMoedaBR(meta.total_aportado)}
+                                    </Text>
+                                    <Text style={metas.valorMetaItem}>
+                                        Meta: {formatarMoedaBR(meta.valor_meta)}
+                                    </Text>
                                 </View>
 
                                 <View style={metas.barraProgressoFundo}>
-                                    <View style={[metas.barraProgresso, { width: `${progresso}%` }]} />
+                                    <View style={[
+                                        metas.barraProgresso,
+                                        { width: `${percentualBarra}%` }
+                                    ]} />
                                 </View>
 
                                 <View style={metas.rodapeMeta}>
-                                    <Text style={metas.textoProgresso}>{progresso.toFixed(0)}%</Text>
-                                    <TouchableOpacity style={metas.botaoAdicionarValor} onPress={() => abrirModalAdicionar(item)} disabled={concluida}>
-                                        <Ionicons name="add-circle-outline" size={18} color={concluida ? cores.textoCinzaMedio : cores.destaque} />
-                                        <Text style={[metas.textoAdicionarValor, concluida && metas.textoAdicionarValorDesabilitado]}>{concluida ? "Meta concluída" : "Adicionar valor"}</Text>
+                                    <Text style={metas.textoProgresso}>
+                                        {meta.percentual.toFixed(0)}%
+                                    </Text>
+                                    <TouchableOpacity
+                                        style={metas.botaoAdicionarValor}
+                                        disabled={processando}
+                                        onPress={() => abrirModalAporte(meta)}
+                                    >
+                                        <Ionicons
+                                            name="add-circle-outline"
+                                            size={18}
+                                            color={cores.destaque}
+                                        />
+                                        <Text style={metas.textoAdicionarValor}>
+                                            Adicionar valor
+                                        </Text>
                                     </TouchableOpacity>
                                 </View>
                             </View>
@@ -278,31 +594,68 @@ export default function Metas() {
                 </View>
             </View>
 
-            <Modal visible={Boolean(metaParaAdicionar)} transparent animationType="slide" onRequestClose={() => setMetaParaAdicionar(null)}>
+            {/* MODAL DE APORTE */}
+            <Modal
+                visible={metaAporte !== null}
+                transparent
+                animationType="slide"
+                onRequestClose={() => {
+                    if (!processando) setMetaAporte(null);
+                }}
+            >
                 <View style={metas.fundoModal}>
                     <View style={metas.containerModal}>
                         <Text style={metas.tituloModal}>Adicionar valor</Text>
-                        <Text style={metas.subtituloModal}>{metaParaAdicionar?.nome}</Text>
-
+                        <Text style={metas.subtituloModal}>
+                            {metaAporte?.nome}
+                        </Text>
                         <Text style={metas.label}>Valor a adicionar</Text>
-                        <View style={[metas.envolucroInput, erroAdicionar && metas.inputErro]}>
+                        <View style={[
+                            metas.envolucroInput,
+                            erroAporte && metas.inputErro
+                        ]}>
                             <Text style={metas.prefixoCifrao}>R$</Text>
                             <TextInput
                                 style={metas.inputComIcone}
                                 placeholder="0,00"
                                 placeholderTextColor={cores.textoPlaceholder}
                                 keyboardType="numeric"
-                                value={valorAdicionar ? valorAdicionar.replace(".", ",") : ""}
-                                onChangeText={handleValorAdicionarChange}
+                                editable={!processando}
+                                value={valorAporte.replace(".", ",")}
+                                maxLength={13}
+                                onChangeText={(texto) => {
+                                    setValorAporte(interpretarValorDigitado(texto));
+                                    setErroAporte(false);
+                                }}
                             />
                         </View>
-
+                        {erroAporte && (
+                            <Text style={metas.erroTexto}>
+                                Informe um valor positivo válido.
+                            </Text>
+                        )}
                         <View style={metas.acoesModal}>
-                            <TouchableOpacity style={metas.botaoCancelarModal} onPress={() => setMetaParaAdicionar(null)}>
-                                <Text style={metas.textoCancelarModal}>Cancelar</Text>
+                            <TouchableOpacity
+                                style={metas.botaoCancelarModal}
+                                disabled={processando}
+                                onPress={() => setMetaAporte(null)}
+                            >
+                                <Text style={metas.textoCancelarModal}>
+                                    Cancelar
+                                </Text>
                             </TouchableOpacity>
-                            <TouchableOpacity style={metas.botaoConfirmarModal} onPress={confirmarAdicao}>
-                                <Text style={metas.textoConfirmarModal}>Adicionar</Text>
+                            <TouchableOpacity
+                                style={metas.botaoConfirmarModal}
+                                disabled={processando}
+                                onPress={confirmarAporte}
+                            >
+                                {processando ? (
+                                    <ActivityIndicator color={cores.textoBotao} />
+                                ) : (
+                                    <Text style={metas.textoConfirmarModal}>
+                                        Adicionar
+                                    </Text>
+                                )}
                             </TouchableOpacity>
                         </View>
                     </View>
