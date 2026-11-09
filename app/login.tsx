@@ -1,3 +1,4 @@
+
 import { Ionicons } from "@expo/vector-icons";
 import React, { useState } from "react";
 
@@ -240,17 +241,6 @@ export default function Login() {
                         />
                     </TouchableOpacity>
                 </View>
-
-                {/* RECUPERAR SENHA */}
-                <TouchableOpacity
-                    style={login.linkSenha}
-                    onPress={() => router.push("/recuperar_senha")}
-                    disabled={enviando}
-                >
-                    <Text style={login.textoLink}>
-                        Esqueceu a senha?
-                    </Text>
-                </TouchableOpacity>
 
                 {/* BOTAO DE LOGIN */}
                 <TouchableOpacity

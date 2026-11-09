@@ -1,3 +1,4 @@
+
 import {
   DarkTheme,
   DefaultTheme,
@@ -39,7 +40,6 @@ function Navegacao() {
       >
         <Stack.Screen name="login" />
         <Stack.Screen name="cadastroUsuario" />
-        <Stack.Screen name="recuperar_senha" />
       </Stack.Protected>
 
       {/* Telas privadas do JCASH */}

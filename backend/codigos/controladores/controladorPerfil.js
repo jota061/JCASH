@@ -1,11 +1,14 @@
+
 const {
     buscarPerfilUsuario,
-    atualizarNomeSocial
+    atualizarNomeSocial,
+    alterarSenhaUsuario,
+    excluirContaUsuario
 } = require("../servicos/servicoPerfil");
 
 // Responder aos erros sem expor dados internos
 function responderErro(resposta, erro, operacao) {
-    if ([400, 401, 404].includes(erro.status)) {
+    if ([400, 401, 404, 409].includes(erro.status)) {
         return resposta.status(erro.status).json({
             status: "erro",
             mensagem: erro.message
@@ -56,7 +59,54 @@ async function editarNomeSocial(requisicao, resposta) {
     }
 }
 
+// Alterar a senha do usuario autenticado
+async function alterarSenha(requisicao, resposta) {
+    try {
+        await alterarSenhaUsuario(
+            requisicao.usuario.id_usuario,
+            requisicao.body
+        );
+
+        return resposta.status(200).json({
+            status: "sucesso",
+            mensagem: "Senha atualizada com sucesso."
+        });
+
+    } catch (erro) {
+        return responderErro(resposta, erro, "alterar senha do");
+    }
+}
+
+// Excluir definitivamente a conta do usuario autenticado
+async function excluirConta(requisicao, resposta) {
+    try {
+        // O identificador vem do JWT validado pelo middleware
+        const idUsuario = requisicao.usuario.id_usuario;
+
+        // O servico confirma a senha antes de excluir a conta
+        const resultado = await excluirContaUsuario(
+            idUsuario,
+            requisicao.body
+        );
+
+        // Responder somente depois da exclusao ser concluida
+        return resposta.status(200).json({
+            status: "sucesso",
+            mensagem: resultado.mensagem
+        });
+
+    } catch (erro) {
+        return responderErro(
+            resposta,
+            erro,
+            "excluir conta do"
+        );
+    }
+}
+
 module.exports = {
     consultarPerfil,
-    editarNomeSocial
+    editarNomeSocial,
+    alterarSenha,
+    excluirConta
 };

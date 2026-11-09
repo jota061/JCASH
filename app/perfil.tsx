@@ -1,21 +1,9 @@
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Stack, useRouter, useFocusEffect } from "expo-router";
 
-import React, {
-    useCallback,
-    useState
-} from "react";
+import React, { useCallback, useRef, useState } from "react";
 
-import {
-    ActivityIndicator,
-    Alert,
-    Modal,
-    ScrollView,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View
-} from "react-native";
+import { ActivityIndicator, Alert, Modal, ScrollView, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 import { SafeAreaView } from "react-native-safe-area-context";
 
@@ -28,7 +16,8 @@ import {
 
 import {
     consultarPerfil,
-    salvarNomeSocial
+    salvarNomeSocial,
+    excluirContaPerfil
 } from "../servicos/servicoPerfil";
 
 import type {
@@ -53,6 +42,14 @@ export default function PerfilUsuarioScreen() {
 
     // Controle do logout
     const [saindo, setSaindo] = useState(false);
+
+    // Confirmacao da exclusao definitiva
+    const [modalExcluirConta, setModalExcluirConta] = useState(false);
+    const [senhaExclusao, setSenhaExclusao] = useState("");
+    const [mostrarSenhaExclusao, setMostrarSenhaExclusao] = useState(false);
+    const [erroSenhaExclusao, setErroSenhaExclusao] = useState(false);
+    const [excluindo, setExcluindo] = useState(false);
+    const exclusaoEmAndamento = useRef(false);
 
     // Atualizar os dados sempre que a tela receber foco
     useFocusEffect(
@@ -153,7 +150,7 @@ export default function PerfilUsuarioScreen() {
 
     // Pedir confirmacao antes de sair da conta
     const handleSairConta = () => {
-        if (saindo) {
+        if (saindo || excluindo) {
             return;
         }
 
@@ -195,12 +192,113 @@ export default function PerfilUsuarioScreen() {
         );
     };
 
-    // A exclusao definitiva sera integrada em outra etapa
+    // Fechar o formulario de exclusao sem guardar a senha
+    const fecharModalExclusao = () => {
+        if (exclusaoEmAndamento.current) {
+            return;
+        }
+
+        setSenhaExclusao("");
+        setMostrarSenhaExclusao(false);
+        setErroSenhaExclusao(false);
+        setModalExcluirConta(false);
+    };
+
+    // Informar as consequencias antes de pedir a senha
     const handleExcluirConta = () => {
+        if (saindo || excluindo || carregando || !usuario) {
+            return;
+        }
+
         Alert.alert(
-            "Funcionalidade em desenvolvimento",
-            "A exclusão definitiva da conta ainda não está disponível."
+            "Excluir conta definitivamente?",
+            "Seu cadastro e todos os dados financeiros serão " +
+            "apagados permanentemente. Essa ação não pode " +
+            "ser desfeita. Deseja continuar?",
+            [
+                { text: "Cancelar", style: "cancel" },
+                {
+                    text: "Continuar",
+                    style: "destructive",
+                    onPress: () => {
+                        setSenhaExclusao("");
+                        setMostrarSenhaExclusao(false);
+                        setErroSenhaExclusao(false);
+                        setModalExcluirConta(true);
+                    }
+                }
+            ]
         );
+    };
+
+    // Confirmar a senha e solicitar a exclusao a API
+    const handleConfirmarExclusao = async () => {
+        if (exclusaoEmAndamento.current || saindo) {
+            return;
+        }
+
+        if (senhaExclusao.length === 0) {
+            setErroSenhaExclusao(true);
+            Alert.alert(
+                "Senha obrigatória",
+                "Informe sua senha atual para confirmar a exclusão."
+            );
+            return;
+        }
+
+        // Bloquear toques repetidos ate finalizar a operacao
+        exclusaoEmAndamento.current = true;
+        setExcluindo(true);
+
+        try {
+            // Somente a API pode confirmar a exclusao definitiva
+            await excluirContaPerfil(senhaExclusao);
+
+        } catch (erro) {
+            const mensagem =
+                erro instanceof Error
+                    ? erro.message
+                    : "Não foi possível confirmar a exclusão.";
+
+            // Falhas de rede podem ter resultado incerto
+            Alert.alert("Exclusão não confirmada", mensagem);
+            exclusaoEmAndamento.current = false;
+            setExcluindo(false);
+            return;
+        }
+
+        // A exclusao foi confirmada: limpar o campo e encerrar a sessao
+        setSenhaExclusao("");
+        setModalExcluirConta(false);
+
+        try {
+            // O contexto remove o JWT e as rotas protegidas voltam ao Login
+            await sair();
+
+            Alert.alert(
+                "Conta excluída",
+                "Seu cadastro e seus dados financeiros foram " +
+                "excluídos definitivamente."
+            );
+
+        } catch (erro) {
+            console.error(
+                "[JCASH] Falha ao encerrar a sessão após a exclusão:",
+                erro
+            );
+
+            // A exclusao ja foi concluida: nao pedir para repetir
+            Alert.alert(
+                "Conta excluída",
+                "A exclusão foi confirmada, mas não foi possível " +
+                "encerrar a sessão automaticamente. Reinicie " +
+                "o aplicativo antes de tentar acessar novamente."
+            );
+
+        } finally {
+            exclusaoEmAndamento.current = false;
+            setExcluindo(false);
+        }
     };
 
     return (
@@ -350,7 +448,7 @@ export default function PerfilUsuarioScreen() {
                     style={perfil.botaoEditar}
                     activeOpacity={0.8}
                     onPress={() => router.push("/trocar_senha")}
-                    disabled={saindo}
+                    disabled={saindo || excluindo}
                 >
                     <Ionicons
                         name="pencil-outline"
@@ -367,11 +465,11 @@ export default function PerfilUsuarioScreen() {
                 <TouchableOpacity
                     style={[
                         perfil.botaoEditar,
-                        saindo && { opacity: 0.6 }
+                        (saindo || excluindo) && { opacity: 0.6 }
                     ]}
                     activeOpacity={0.8}
                     onPress={handleSairConta}
-                    disabled={saindo}
+                    disabled={saindo || excluindo}
                     accessibilityRole="button"
                     accessibilityLabel="Sair da conta"
                 >
@@ -395,10 +493,14 @@ export default function PerfilUsuarioScreen() {
 
                 {/* EXCLUIR CONTA */}
                 <TouchableOpacity
-                    style={perfil.botaoExcluir}
+                    style={[
+                        perfil.botaoExcluir,
+                        (saindo || excluindo || carregando || !usuario) &&
+                        { opacity: 0.6 }
+                    ]}
                     activeOpacity={0.8}
                     onPress={handleExcluirConta}
-                    disabled={saindo}
+                    disabled={saindo || excluindo || carregando || !usuario}
                 >
                     <Ionicons
                         name="trash-outline"
@@ -477,13 +579,124 @@ export default function PerfilUsuarioScreen() {
                                 onPress={handleSalvarNomeSocial}
                                 disabled={salvando}
                             >
-                                {salvando ? (
+                                {salvando ? (<ActivityIndicator color={cores.textoBotao} />) : (<Text style={perfil.textoSalvarModal}>Salvar</Text>)}
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* MODAL DE CONFIRMACAO DA EXCLUSAO DEFINITIVA */}
+            <Modal
+                visible={modalExcluirConta}
+                transparent
+                animationType="fade"
+                onRequestClose={fecharModalExclusao}
+            >
+                <View style={perfil.fundoModal}>
+                    <View style={perfil.containerModal}>
+                        <Text style={perfil.tituloModal}>
+                            Excluir Conta
+                        </Text>
+
+                        <Text
+                            style={[
+                                perfil.subtituloModal,
+                                { color: cores.erro }
+                            ]}
+                        >
+                            Essa ação é permanente. Seu cadastro, suas
+                            entradas, despesas, contas, metas e reserva
+                            de emergência serão excluídos.
+                        </Text>
+
+                        {/* Senha com opcao de mostrar ou ocultar */}
+                        <View style={{ position: "relative", justifyContent: "center" }}>
+                            <TextInput
+                                style={[
+                                    perfil.inputModal,
+                                    erroSenhaExclusao && perfil.inputModalErro,
+                                    { paddingRight: 52 }
+                                ]}
+                                placeholder="Confirme sua senha atual"
+                                placeholderTextColor={cores.textoPlaceholder}
+                                value={senhaExclusao}
+                                onChangeText={(texto) => {
+                                    setSenhaExclusao(texto);
+                                    if (texto.length > 0) {
+                                        setErroSenhaExclusao(false);
+                                    }
+                                }}
+                                secureTextEntry={!mostrarSenhaExclusao}
+                                autoCapitalize="none"
+                                autoCorrect={false}
+                                editable={!excluindo}
+                            />
+
+                            <TouchableOpacity
+                                style={{
+                                    position: "absolute",
+                                    right: 12,
+                                    top: 0,
+                                    bottom: 0,
+                                    justifyContent: "center",
+                                    paddingHorizontal: 4
+                                }}
+                                onPress={() => setMostrarSenhaExclusao((atual) => !atual)}
+                                disabled={excluindo}
+                                accessibilityRole="button"
+                                accessibilityLabel={
+                                    mostrarSenhaExclusao ? "Ocultar senha" : "Mostrar senha"
+                                }
+                            >
+                                <Ionicons
+                                    name={
+                                        mostrarSenhaExclusao
+                                            ? "eye-outline"
+                                            : "eye-off-outline"
+                                    }
+                                    size={22}
+                                    color={cores.textoCinzaMedio}
+                                />
+                            </TouchableOpacity>
+                        </View>
+
+                        {erroSenhaExclusao && (
+                            <Text style={perfil.erroModal}>
+                                Informe sua senha atual.
+                            </Text>
+                        )}
+
+                        <View style={perfil.acoesModal}>
+                            <TouchableOpacity
+                                style={perfil.botaoCancelarModal}
+                                onPress={fecharModalExclusao}
+                                disabled={excluindo}
+                                accessibilityRole="button"
+                            >
+                                <Text style={perfil.textoCancelarModal}>
+                                    Cancelar
+                                </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                                style={[
+                                    perfil.botaoSalvarModal,
+                                    { backgroundColor: cores.erro },
+                                    excluindo && { opacity: 0.6 }
+                                ]}
+                                onPress={handleConfirmarExclusao}
+                                disabled={excluindo}
+                                accessibilityRole="button"
+                                accessibilityLabel="Excluir conta definitivamente"
+                            >
+                                {excluindo ? (
                                     <ActivityIndicator
                                         color={cores.textoBotao}
                                     />
                                 ) : (
                                     <Text style={perfil.textoSalvarModal}>
-                                        Salvar
+                                        Excluir
                                     </Text>
                                 )}
                             </TouchableOpacity>

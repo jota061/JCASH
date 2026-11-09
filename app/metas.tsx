@@ -223,7 +223,7 @@ export default function Metas() {
                 id_categoria: categoriaId
             });
             limparFormulario();
-        }, "Meta cadastrada no JCASH.");
+        }, "Meta cadastrada.");
     };
 
     const abrirModalAporte = (meta: MetaFinanceira) => {
@@ -250,7 +250,7 @@ export default function Metas() {
             await registrarAporteMeta(idMeta, valor);
             setMetaAporte(null);
             setValorAporte("");
-        }, "Aporte registrado no MariaDB.");
+        }, "Aporte registrado.");
     };
 
     const confirmarArquivamento = (meta: MetaFinanceira) => {

@@ -401,7 +401,7 @@ export default function Contas() {
                                     formatarDataISO(new Date())
                                 );
                             },
-                            "Pagamento registrado no MariaDB."
+                            "Pagamento registrado."
                         );
                     }
                 }

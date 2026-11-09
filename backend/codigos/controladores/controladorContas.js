@@ -1,25 +1,17 @@
-const {
-    cadastrarConta,
-    listarContas,
-    consultarConta,
-    atualizarConta,
-    pagarConta,
-    cancelarConta,
-    excluirConta
-} = require("../servicos/servicoContas");
+const { cadastrarConta, listarContas, consultarConta, atualizarConta, pagarConta, cancelarConta, excluirConta } = require("../servicos/servicoContas");
 
 // Tratar erros previstos sem mostrar detalhes internos do banco
 function responderErro(resposta, erro, operacao) {
     if ([400, 401, 404, 409].includes(erro.status)) {
-        return resposta.status(erro.status).json({
-            status: "erro",
+        return resposta.status(erro.status).json({ 
+            status: "erro", 
             mensagem: erro.message
         });
     }
 
     if ([1062, 1644, 4025].includes(erro.errno)) {
         return resposta.status(409).json({
-            status: "erro",
+            status: "erro", 
             mensagem: "A operacao conflita com uma regra do banco de dados."
         });
     }
@@ -27,7 +19,7 @@ function responderErro(resposta, erro, operacao) {
     console.error(`Erro ao ${operacao} conta:`, erro);
 
     return resposta.status(500).json({
-        status: "erro",
+        status: "erro", 
         mensagem: `Erro interno ao ${operacao} conta.`
     });
 }
@@ -46,22 +38,19 @@ async function registrarConta(requisicao, resposta) {
             conta
         });
     } catch (erro) {
-        return responderErro(resposta, erro, "cadastrar");
+        return responderErro(
+            resposta, 
+            erro, 
+            "cadastrar");
     }
 }
 
 // Listar contas do usuario autenticado
 async function consultarContas(requisicao, resposta) {
     try {
-        const contas = await listarContas(
-            requisicao.usuario.id_usuario,
-            requisicao.query
-        );
+        const contas = await listarContas(requisicao.usuario.id_usuario, requisicao.query);
 
-        return resposta.status(200).json({
-            status: "sucesso",
-            contas
-        });
+        return resposta.status(200).json({ status: "sucesso", contas });
     } catch (erro) {
         return responderErro(resposta, erro, "consultar");
     }
@@ -70,15 +59,9 @@ async function consultarContas(requisicao, resposta) {
 // Consultar uma conta pelo identificador
 async function consultarContaPorId(requisicao, resposta) {
     try {
-        const conta = await consultarConta(
-            requisicao.usuario.id_usuario,
-            Number(requisicao.params.id)
-        );
+        const conta = await consultarConta(requisicao.usuario.id_usuario, Number(requisicao.params.id));
 
-        return resposta.status(200).json({
-            status: "sucesso",
-            conta
-        });
+        return resposta.status(200).json({ status: "sucesso", conta });
     } catch (erro) {
         return responderErro(resposta, erro, "consultar");
     }
@@ -87,11 +70,7 @@ async function consultarContaPorId(requisicao, resposta) {
 // Editar uma conta
 async function editarConta(requisicao, resposta) {
     try {
-        const conta = await atualizarConta(
-            requisicao.usuario.id_usuario,
-            Number(requisicao.params.id),
-            requisicao.body
-        );
+        const conta = await atualizarConta(requisicao.usuario.id_usuario, Number(requisicao.params.id), requisicao.body);
 
         return resposta.status(200).json({
             status: "sucesso",
